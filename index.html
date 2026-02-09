@@ -1,0 +1,724 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+	<title>摸鱼小游戏 | 海豚穿越海洋</title>
+		
+    
+    <style>
+    
+    body {
+      margin: 0;
+      font-family: 'Press Start 2P', cursive;
+      font-size: 2em;
+      color: white;
+      background: linear-gradient(180deg, #001a33 0%, #003d66 50%, #006699 100%);
+    }
+    button {
+          outline: none;
+          cursor: pointer;
+          background-color: transparent;
+          color: white;
+        }
+    #counter {
+      position: absolute;
+      top: 20px;
+      right: 20px;
+      text-shadow: 0 0 10px #00ffff;
+    }
+    #end {
+      position: absolute;
+      min-width: 100%;
+      min-height: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      visibility: hidden;
+    }
+    #end button {
+          background: linear-gradient(135deg, #00bfff 0%, #1e90ff 100%);
+          padding: 20px 50px 20px 50px;
+          font-family: inherit;
+          font-size: inherit;
+          border: 3px solid white;
+          color: white;
+        }
+    #controlls {
+      position: absolute;
+      min-width: 100%;
+      min-height: 100%;
+      display: flex;
+      align-items: flex-end;
+      justify-content: center;
+    }
+    #controlls div {
+      margin-bottom: 20px;
+      font-size: 0;
+      max-width: 180px;
+    }
+    #controlls button {
+          width: 50px;
+          font-family: inherit;
+          font-size: 30px;
+          border: 3px solid #00ffff;
+          color: white;
+          background-color: rgba(0, 100, 200, 0.6);
+          margin: 5px;
+        }
+    #controlls button:first-of-type {
+      width: 170px;
+    }
+	
+    </style>
+
+</head>
+
+<body>
+    <div id="counter">0</div>
+    <div id="controlls">
+        <div>
+            <button id="forward">↑</button>
+            <button id="left">←</button>
+            <button id="backward">↓</button>
+            <button id="right">→</button>
+        </div>
+    </div>
+    <div id="end">
+        <button id="retry">再来一次</button>
+    </div>
+    <script type="text/javascript" src="https://repo.bfw.wiki/bfwrepo/js/three.92.js"></script>
+    <script>
+        const counterDOM = document.getElementById('counter');  
+const endDOM = document.getElementById('end');  
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x001a33); // 深海蓝色背景
+
+const distance = 500;
+const camera = new THREE.OrthographicCamera( window.innerWidth/-2, window.innerWidth/2, window.innerHeight / 2, window.innerHeight / -2, 0.1, 10000 );
+
+camera.rotation.x = 50*Math.PI/180;
+camera.rotation.y = 20*Math.PI/180;
+camera.rotation.z = 10*Math.PI/180;
+
+const initialCameraPositionY = -Math.tan(camera.rotation.x)*distance;
+const initialCameraPositionX = Math.tan(camera.rotation.y)*Math.sqrt(distance**2 + initialCameraPositionY**2);
+camera.position.y = initialCameraPositionY;
+camera.position.x = initialCameraPositionX;
+camera.position.z = distance;
+
+const zoom = 2;
+
+const chickenSize = 15;
+
+const positionWidth = 42;
+const columns = 17;
+const boardWidth = positionWidth*columns;
+
+const stepTime = 200;
+
+let lanes;
+let currentLane;
+let currentColumn;
+
+let previousTimestamp;
+let startMoving;
+let moves;
+let stepStartTimestamp;
+
+const carFrontTexture = new Texture(40,80,[{x: 0, y: 10, w: 30, h: 60 }]);
+const carBackTexture = new Texture(40,80,[{x: 10, y: 10, w: 30, h: 60 }]);
+const carRightSideTexture = new Texture(110,40,[{x: 10, y: 0, w: 50, h: 30 }, {x: 70, y: 0, w: 30, h: 30 }]);
+const carLeftSideTexture = new Texture(110,40,[{x: 10, y: 10, w: 50, h: 30 }, {x: 70, y: 10, w: 30, h: 30 }]);
+
+const truckFrontTexture = new Texture(30,30,[{x: 15, y: 0, w: 10, h: 30 }]);
+const truckRightSideTexture = new Texture(25,30,[{x: 0, y: 15, w: 10, h: 10 }]);
+const truckLeftSideTexture = new Texture(25,30,[{x: 0, y: 5, w: 10, h: 10 }]);
+
+const generateLanes = () => [-9,-8,-7,-6,-5,-4,-3,-2,-1,0,1,2,3,4,5,6,7,8,9].map((index) => {
+    const lane = new Lane(index);
+    lane.mesh.position.y = index*positionWidth*zoom;
+    scene.add( lane.mesh );
+    return lane;
+}).filter((lane) => lane.index >= 0);
+
+const addLane = () => {
+    const index = lanes.length;
+    const lane = new Lane(index);
+    lane.mesh.position.y = index*positionWidth*zoom;
+    scene.add(lane.mesh);
+    lanes.push(lane);
+}
+
+const chicken = new Chicken();
+scene.add( chicken );
+
+const laneTypes = ['car', 'truck', 'forest'];
+const laneSpeeds = [2, 2.5, 3];
+const vechicleColors = [0xffa500, 0xff6347, 0xff1493, 0x00ced1]; // 鱼的颜色
+const threeHeights = [20,45,60];
+
+const initaliseValues = () => {
+    lanes = generateLanes()
+
+    currentLane = 0;
+    currentColumn = Math.floor(columns/2);
+
+    previousTimestamp = null;
+
+    startMoving = false;
+    moves = [];
+    stepStartTimestamp;
+
+    chicken.position.x = 0;
+    chicken.position.y = 0;
+
+    camera.position.y = initialCameraPositionY;
+    camera.position.x = initialCameraPositionX;
+}
+
+initaliseValues();
+
+const renderer = new THREE.WebGLRenderer({
+  alpha: true,
+  antialias: true
+});
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.setSize( window.innerWidth, window.innerHeight );
+document.body.appendChild( renderer.domElement );
+
+hemiLight = new THREE.HemisphereLight(0x87ceeb, 0x006994, 0.6); // 海洋色调光照
+scene.add(hemiLight)
+
+dirLight = new THREE.DirectionalLight(0xadd8e6, 0.6); // 淡蓝色光
+dirLight.position.set(-100, -100, 200);
+dirLight.castShadow = true;
+scene.add(dirLight);
+
+dirLight.shadow.mapSize.width = 2048;
+dirLight.shadow.mapSize.height = 2048;
+var d = 500;
+dirLight.shadow.camera.left = - d;
+dirLight.shadow.camera.right = d;
+dirLight.shadow.camera.top = d;
+dirLight.shadow.camera.bottom = - d;
+
+backLight = new THREE.DirectionalLight(0x4682b4, .4); // 钢蓝色背光
+backLight.position.set(200, 200, 50);
+backLight.castShadow = true;
+scene.add(backLight)
+
+function Texture(width, height, rects) {
+    const canvas = document.createElement( "canvas" );
+    canvas.width = width;
+    canvas.height = height;
+    const context = canvas.getContext( "2d" );
+    context.fillStyle = "#ffffff";
+    context.fillRect( 0, 0, width, height );
+    context.fillStyle = "rgba(0,0,0,0.6)";  
+    rects.forEach(rect => {
+      context.fillRect(rect.x, rect.y, rect.w, rect.h);
+    });
+    return new THREE.CanvasTexture(canvas);
+}
+
+function Wheel() {
+    const wheel = new THREE.Mesh( 
+      new THREE.BoxBufferGeometry( 12*zoom, 33*zoom, 12*zoom ), 
+      new THREE.MeshLambertMaterial( { color: 0x333333, flatShading: true } ) 
+    );
+    wheel.position.z = 6*zoom;
+    return wheel;
+}
+
+function Car() {
+  const car = new THREE.Group();
+  const fishColors = [0xffa500, 0xff6347, 0xff1493, 0x00ced1]; // 橙色、红色、粉色、青色
+  const color = fishColors[Math.floor(Math.random() * fishColors.length)];
+  
+  // 小鱼身体（椭圆形）
+  const body = new THREE.Mesh(
+    new THREE.BoxBufferGeometry( 50*zoom, 20*zoom, 18*zoom ), 
+    new THREE.MeshPhongMaterial( { color, flatShading: true } )
+  );
+  body.position.z = 12*zoom;
+  body.castShadow = true;
+  body.receiveShadow = true;
+  car.add(body)
+  
+  // 鱼头（尖）
+  const head = new THREE.Mesh(
+    new THREE.BoxBufferGeometry( 15*zoom, 12*zoom, 14*zoom ), 
+    new THREE.MeshPhongMaterial( { color, flatShading: true } )
+  );
+  head.position.x = 32*zoom;
+  head.position.z = 12*zoom;
+  car.add(head);
+
+  // 鱼尾
+  const tail = new THREE.Mesh(
+    new THREE.BoxBufferGeometry( 8*zoom, 25*zoom, 3*zoom ), 
+    new THREE.MeshLambertMaterial( { color, flatShading: true } )
+  );
+  tail.position.x = -29*zoom;
+  tail.position.z = 12*zoom;
+  car.add(tail);
+  
+  // 背鳍
+  const dorsalFin = new THREE.Mesh(
+    new THREE.BoxBufferGeometry( 20*zoom, 4*zoom, 12*zoom ), 
+    new THREE.MeshLambertMaterial( { color, flatShading: true } )
+  );
+  dorsalFin.position.z = 24*zoom;
+  car.add(dorsalFin);
+
+  // 腹鳍
+  const ventralFin = new THREE.Mesh(
+    new THREE.BoxBufferGeometry( 15*zoom, 4*zoom, 8*zoom ), 
+    new THREE.MeshLambertMaterial( { color, flatShading: true } )
+  );
+  ventralFin.position.z = 3*zoom;
+  car.add(ventralFin);
+
+  car.castShadow = true;
+  car.receiveShadow = false;
+  
+  return car;  
+}
+
+function Truck() {
+    const truck = new THREE.Group();
+    const sharkColors = [0x708090, 0x2f4f4f, 0x696969]; // 灰色系鲨鱼
+    const color = sharkColors[Math.floor(Math.random() * sharkColors.length)];
+    
+    // 鲨鱼主体（大而长）
+    const body = new THREE.Mesh(
+        new THREE.BoxBufferGeometry( 90*zoom, 30*zoom, 25*zoom ), 
+        new THREE.MeshPhongMaterial( { color, flatShading: true } )
+    );
+    body.position.z = 15*zoom;
+    body.castShadow = true;
+    body.receiveShadow = true;
+    truck.add(body)
+
+    // 鲨鱼头部（尖锐）
+    const head = new THREE.Mesh(
+      new THREE.BoxBufferGeometry( 25*zoom, 20*zoom, 20*zoom ), 
+      new THREE.MeshPhongMaterial( { color, flatShading: true } )
+    );
+    head.position.x = 57*zoom;
+    head.position.z = 15*zoom;
+    truck.add(head);
+
+    // 鲨鱼嘴部（更尖）
+    const snout = new THREE.Mesh(
+      new THREE.BoxBufferGeometry( 15*zoom, 12*zoom, 15*zoom ), 
+      new THREE.MeshPhongMaterial( { color, flatShading: true } )
+    );
+    snout.position.x = 75*zoom;
+    snout.position.z = 15*zoom;
+    truck.add(snout);
+
+    // 背鳍（大三角形）
+    const dorsalFin = new THREE.Mesh(
+      new THREE.BoxBufferGeometry( 25*zoom, 8*zoom, 30*zoom ), 
+      new THREE.MeshLambertMaterial( { color, flatShading: true } )
+    );
+    dorsalFin.position.x = 10*zoom;
+    dorsalFin.position.z = 40*zoom;
+    truck.add(dorsalFin);
+    
+    // 尾鳍（垂直）
+    const tailFin = new THREE.Mesh(
+      new THREE.BoxBufferGeometry( 12*zoom, 8*zoom, 35*zoom ), 
+      new THREE.MeshLambertMaterial( { color, flatShading: true } )
+    );
+    tailFin.position.x = -52*zoom;
+    tailFin.position.z = 15*zoom;
+    truck.add(tailFin);
+
+    // 侧鳍
+    const sideFin = new THREE.Mesh(
+      new THREE.BoxBufferGeometry( 20*zoom, 15*zoom, 3*zoom ), 
+      new THREE.MeshLambertMaterial( { color, flatShading: true } )
+    );
+    sideFin.position.x = 20*zoom;
+    sideFin.position.z = 5*zoom;
+    truck.add(sideFin);
+
+    // 腹部（浅色）
+    const belly = new THREE.Mesh(
+      new THREE.BoxBufferGeometry( 70*zoom, 25*zoom, 3*zoom ), 
+      new THREE.MeshPhongMaterial( { color: 0xd3d3d3, flatShading: true } )
+    );
+    belly.position.z = 3*zoom;
+    truck.add(belly);
+    
+    return truck;  
+  }
+
+function Three() {
+    const three = new THREE.Group();
+    
+    // 珊瑚底座
+    const trunk = new THREE.Mesh(
+      new THREE.BoxBufferGeometry( 15*zoom, 15*zoom, 20*zoom ), 
+      new THREE.MeshPhongMaterial( { color: 0xff6347, flatShading: true } ) // 珊瑚红
+    );
+    trunk.position.z = 10*zoom;
+    trunk.castShadow = true;
+    trunk.receiveShadow = true;
+    three.add(trunk);
+
+    height = threeHeights[Math.floor(Math.random()*threeHeights.length)];
+
+    // 珊瑚顶部
+    const coralColors = [0xff69b4, 0xffa500, 0x9370db]; // 粉色、橙色、紫色
+    const crown = new THREE.Mesh(
+        new THREE.BoxBufferGeometry( 30*zoom, 30*zoom, height*zoom ), 
+        new THREE.MeshLambertMaterial( { color: coralColors[Math.floor(Math.random()*coralColors.length)], flatShading: true } )
+    );
+    crown.position.z = (height/2+20)*zoom;
+    crown.castShadow = true;
+    crown.receiveShadow = false;
+    three.add(crown);
+    
+    return three;  
+}
+
+function Chicken() {
+    const chicken = new THREE.Group();
+    
+    // 海豚主体（流线型）
+    const body = new THREE.Mesh(
+      new THREE.BoxBufferGeometry( chickenSize*zoom, 20*zoom, 12*zoom ), 
+      new THREE.MeshPhongMaterial( { color: 0x708090, flatShading: true } )
+    );
+    body.position.z = 8*zoom;
+    body.castShadow = true;
+    body.receiveShadow = true;
+    chicken.add(body);
+
+    // 海豚头部（尖嘴）
+    const head = new THREE.Mesh(
+        new THREE.BoxBufferGeometry( 8*zoom, 6*zoom, 8*zoom ), 
+        new THREE.MeshPhongMaterial( { color: 0x708090, flatShading: true } )
+    );
+    head.position.y = 13*zoom;
+    head.position.z = 8*zoom;
+    chicken.add(head);
+
+    // 海豚背鳍
+    const dorsalFin = new THREE.Mesh(
+        new THREE.BoxBufferGeometry( 6*zoom, 3*zoom, 8*zoom ), 
+        new THREE.MeshLambertMaterial( { color: 0x5a6d7e, flatShading: true } )
+    );
+    dorsalFin.position.z = 16*zoom;
+    dorsalFin.castShadow = true;
+    chicken.add(dorsalFin);
+
+    // 海豚尾鳍（水平）
+    const tailFin = new THREE.Mesh(
+        new THREE.BoxBufferGeometry( 12*zoom, 3*zoom, 2*zoom ), 
+        new THREE.MeshLambertMaterial( { color: 0x5a6d7e, flatShading: true } )
+    );
+    tailFin.position.y = -10*zoom;
+    tailFin.position.z = 8*zoom;
+    chicken.add(tailFin);
+
+    // 海豚腹部（浅色）
+    const belly = new THREE.Mesh(
+        new THREE.BoxBufferGeometry( 10*zoom, 16*zoom, 2*zoom ), 
+        new THREE.MeshPhongMaterial( { color: 0xb0c4de, flatShading: true } )
+    );
+    belly.position.z = 2*zoom;
+    chicken.add(belly);
+    
+    return chicken;  
+}
+
+function Road() {
+    const road = new THREE.Group();
+
+    const createSection = color => new THREE.Mesh(
+        new THREE.PlaneBufferGeometry( boardWidth*zoom, positionWidth*zoom ), 
+        new THREE.MeshPhongMaterial( { color } )
+    );
+
+    const middle = createSection(0x1e90ff); // 道奇蓝
+    middle.receiveShadow = true;
+    road.add(middle);
+
+    const left = createSection(0x4169e1); // 皇家蓝
+    left.position.x = - boardWidth*zoom;
+    road.add(left);
+
+    const right = createSection(0x4169e1); // 皇家蓝
+    right.position.x = boardWidth*zoom;
+    road.add(right);
+    
+    return road;
+}
+
+function Grass() {
+    const grass = new THREE.Group();
+
+    const createSection = color => new THREE.Mesh(
+        new THREE.BoxBufferGeometry( boardWidth*zoom, positionWidth*zoom, 3*zoom ), 
+        new THREE.MeshPhongMaterial( { color } )
+    );
+
+    const middle = createSection(0xff7f50); // 珊瑚色
+    middle.receiveShadow = true;
+    grass.add(middle);
+
+    const left = createSection(0xff6347); // 番茄红
+    left.position.x = - boardWidth*zoom;
+    grass.add(left);
+
+    const right = createSection(0xff6347); // 番茄红
+    right.position.x = boardWidth*zoom;
+    grass.add(right);
+
+    grass.position.z = 1.5*zoom;
+    return grass;
+}
+
+function Lane(index) {
+    this.index = index;
+    this.type = index <= 0 ? 'field' : laneTypes[Math.floor(Math.random()*laneTypes.length)];
+
+    switch(this.type) {
+        case 'field': {
+            this.type = 'field';
+            this.mesh = new Grass();
+            break;
+        }
+        case 'forest': {
+            this.mesh = new Grass();
+            
+            this.occupiedPositions = new Set();
+            this.threes = [1,2,3,4].map(() => {
+                const three = new Three();
+                let position;
+                do {
+                    position = Math.floor(Math.random()*columns);
+                }while(this.occupiedPositions.has(position))
+                this.occupiedPositions.add(position);
+                three.position.x = (position*positionWidth+positionWidth/2)*zoom-boardWidth*zoom/2;
+                this.mesh.add( three );
+                return three;
+            })
+            break;
+        }
+        case 'car' : {
+            this.mesh = new Road();
+            this.direction = Math.random() >= 0.5;
+            
+            const occupiedPositions = new Set();
+            this.vechicles = [1,2,3].map(() => {
+                const vechicle = new Car();
+                let position;
+                do {
+                    position = Math.floor(Math.random()*columns/2);
+                }while(occupiedPositions.has(position))
+                occupiedPositions.add(position);
+                vechicle.position.x = (position*positionWidth*2+positionWidth/2)*zoom-boardWidth*zoom/2;
+                if(!this.direction) vechicle.rotation.z = Math.PI;
+                this.mesh.add( vechicle );
+                return vechicle;
+            })
+
+            this.speed = laneSpeeds[Math.floor(Math.random()*laneSpeeds.length)];
+            break;
+        }
+        case 'truck' : {
+            this.mesh = new Road();
+            this.direction = Math.random() >= 0.5;
+            
+            const occupiedPositions = new Set();
+            this.vechicles = [1,2].map(() => {
+                const vechicle = new Truck();
+                let position;
+                do {
+                    position = Math.floor(Math.random()*columns/3);
+                }while(occupiedPositions.has(position))
+                occupiedPositions.add(position);
+                vechicle.position.x = (position*positionWidth*3+positionWidth/2)*zoom-boardWidth*zoom/2;
+                if(!this.direction) vechicle.rotation.z = Math.PI;
+                this.mesh.add( vechicle );
+                return vechicle;
+            })
+
+            this.speed = laneSpeeds[Math.floor(Math.random()*laneSpeeds.length)];
+            break;
+        }
+    }
+}
+
+document.querySelector("#retry").addEventListener("click", () => {
+    lanes.forEach(lane => scene.remove( lane.mesh ));
+    initaliseValues();
+    endDOM.style.visibility = 'hidden';
+});
+
+document.getElementById('forward').addEventListener("click", () => move('forward'));
+
+document.getElementById('backward').addEventListener("click", () => move('backward'));
+
+document.getElementById('left').addEventListener("click", () => move('left'));
+
+document.getElementById('right').addEventListener("click", () => move('right'));
+
+window.addEventListener("keydown", event => {
+    if (event.keyCode == '38') {
+        move('forward');
+    }
+    else if (event.keyCode == '40') {
+        move('backward');
+    }
+    else if (event.keyCode == '37') {
+       move('left');
+    }
+    else if (event.keyCode == '39') {
+       move('right');
+    }
+});
+
+function move(direction) {
+    const finalPositions = moves.reduce((position,move) => {
+        if(move === 'forward') return {lane: position.lane+1, column: position.column};
+        if(move === 'backward') return {lane: position.lane-1, column: position.column};
+        if(move === 'left') return {lane: position.lane, column: position.column-1};
+        if(move === 'right') return {lane: position.lane, column: position.column+1};
+    }, {lane: currentLane, column: currentColumn})
+
+    if (direction === 'forward') {
+        if(lanes[finalPositions.lane+1].type === 'forest' && lanes[finalPositions.lane+1].occupiedPositions.has(finalPositions.column)) return;
+        if(!stepStartTimestamp) startMoving = true;
+        addLane();
+    }
+    else if (direction === 'backward') {
+        if(finalPositions.lane === 0) return;
+        if(lanes[finalPositions.lane-1].type === 'forest' && lanes[finalPositions.lane-1].occupiedPositions.has(finalPositions.column)) return;
+        if(!stepStartTimestamp) startMoving = true;
+    }
+    else if (direction === 'left') {
+       if(finalPositions.column === 0) return;
+       if(lanes[finalPositions.lane].type === 'forest' && lanes[finalPositions.lane].occupiedPositions.has(finalPositions.column-1)) return;
+       if(!stepStartTimestamp) startMoving = true;
+    }
+    else if (direction === 'right') {
+       if(finalPositions.column === columns - 1 ) return;
+       if(lanes[finalPositions.lane].type === 'forest' && lanes[finalPositions.lane].occupiedPositions.has(finalPositions.column+1)) return;
+       if(!stepStartTimestamp) startMoving = true;
+    }
+    moves.push(direction);
+}
+
+function animate(timestamp) {
+    requestAnimationFrame( animate );
+    
+    if(!previousTimestamp) previousTimestamp = timestamp;
+    const delta = timestamp - previousTimestamp;
+    previousTimestamp = timestamp;
+  
+    lanes.forEach(lane => {
+        if(lane.type === 'car' || lane.type === 'truck') {
+            const aBitBeforeTheBeginingOfLane = -boardWidth*zoom/2 - positionWidth*2*zoom;
+            const aBitAfterTheEndOFLane = boardWidth*zoom/2 + positionWidth*2*zoom;
+            lane.vechicles.forEach(vechicle => {
+                if(lane.direction) {
+                    vechicle.position.x = vechicle.position.x < aBitBeforeTheBeginingOfLane ? aBitAfterTheEndOFLane : vechicle.position.x -= lane.speed/16*delta;
+                }else{
+                    vechicle.position.x = vechicle.position.x > aBitAfterTheEndOFLane ? aBitBeforeTheBeginingOfLane : vechicle.position.x += lane.speed/16*delta;
+                }
+            });
+        }
+    });
+
+    if(startMoving) {
+        stepStartTimestamp = timestamp;
+        startMoving = false;
+    }
+
+    if(stepStartTimestamp) {
+        const moveDeltaTime = timestamp - stepStartTimestamp;
+        const moveDeltaDistance = Math.min(moveDeltaTime/stepTime,1)*positionWidth*zoom;
+        const jumpDeltaDistance = Math.sin(Math.min(moveDeltaTime/stepTime,1)*Math.PI)*8*zoom;
+        switch(moves[0]) {
+            case 'forward': {
+                camera.position.y = initialCameraPositionY + currentLane*positionWidth*zoom + moveDeltaDistance;        
+                chicken.position.y = currentLane*positionWidth*zoom + moveDeltaDistance;
+                chicken.position.z = jumpDeltaDistance;
+                break;
+            }
+            case 'backward': {
+                camera.position.y = initialCameraPositionY + currentLane*positionWidth*zoom - moveDeltaDistance;
+                chicken.position.y = currentLane*positionWidth*zoom - moveDeltaDistance;
+                chicken.position.z = jumpDeltaDistance;
+                break;
+            }
+            case 'left': {
+                camera.position.x = initialCameraPositionX + (currentColumn*positionWidth+positionWidth/2)*zoom -boardWidth*zoom/2 - moveDeltaDistance;        
+                chicken.position.x = (currentColumn*positionWidth+positionWidth/2)*zoom -boardWidth*zoom/2 - moveDeltaDistance;
+                chicken.position.z = jumpDeltaDistance;
+                break;
+            }
+            case 'right': {
+                camera.position.x = initialCameraPositionX + (currentColumn*positionWidth+positionWidth/2)*zoom -boardWidth*zoom/2 + moveDeltaDistance;        
+                chicken.position.x = (currentColumn*positionWidth+positionWidth/2)*zoom -boardWidth*zoom/2 + moveDeltaDistance; 
+                chicken.position.z = jumpDeltaDistance;
+                break;
+            }
+        }
+        if(moveDeltaTime > stepTime) {
+            switch(moves[0]) {
+                case 'forward': {
+                    currentLane++;
+                    counterDOM.innerHTML = currentLane;    
+                    break;
+                }
+                case 'backward': {
+                    currentLane--;
+                    counterDOM.innerHTML = currentLane;    
+                    break;
+                }
+                case 'left': {
+                    currentColumn--;
+                    break;
+                }
+                case 'right': {
+                    currentColumn++;
+                    break;
+                }
+            }
+            moves.shift();
+            stepStartTimestamp = moves.length === 0 ? null : timestamp;
+        }
+    }
+
+    if(lanes[currentLane].type === 'car' || lanes[currentLane].type === 'truck') {
+        const chickenMinX = chicken.position.x - chickenSize*zoom/2;
+        const chickenMaxX = chicken.position.x + chickenSize*zoom/2;
+        const vechicleLength = { car: 60, truck: 105}[lanes[currentLane].type]; 
+        lanes[currentLane].vechicles.forEach(vechicle => {
+            const carMinX = vechicle.position.x - vechicleLength*zoom/2;
+            const carMaxX = vechicle.position.x + vechicleLength*zoom/2;
+            if(chickenMaxX > carMinX && chickenMinX < carMaxX) {
+                endDOM.style.visibility = 'visible';
+            }
+        });
+    
+    }
+    renderer.render( scene, camera );	
+}
+
+requestAnimationFrame( animate );
+    </script>
+	
+</body>
+
+</html>
