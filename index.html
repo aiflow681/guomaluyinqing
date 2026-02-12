@@ -815,28 +815,24 @@
                     case 'up':
                         const upY = this.gameState.currentRow * w * z + distance;
                         this.player.setPosition(this.player.getPosition().x, upY, jumpHeight);
-                        this.sceneManager.updateCameraPosition(
-                            this.sceneManager.initialCamPos.x,
-                            upY
-                        );
+                        // 视角锁定：仅跟随Y轴（前进方向），X轴保持居中
+                        this.sceneManager.updateCameraPosition(0, upY);
                         break;
                     case 'down':
                         const downY = this.gameState.currentRow * w * z - distance;
                         this.player.setPosition(this.player.getPosition().x, downY, jumpHeight);
-                        this.sceneManager.updateCameraPosition(
-                            this.sceneManager.initialCamPos.x,
-                            downY
-                        );
+                        this.sceneManager.updateCameraPosition(0, downY);
                         break;
                     case 'left':
                         const leftX = (this.gameState.currentCol * w + w/2) * z - boardW * z / 2 - distance;
                         this.player.setPosition(leftX, this.player.getPosition().y, jumpHeight);
-                        this.sceneManager.updateCameraPosition(leftX, this.player.getPosition().y);
+                        // 视角锁定：左右移动时不跟随，保持画面稳定
+                        this.sceneManager.updateCameraPosition(0, this.player.getPosition().y);
                         break;
                     case 'right':
                         const rightX = (this.gameState.currentCol * w + w/2) * z - boardW * z / 2 + distance;
                         this.player.setPosition(rightX, this.player.getPosition().y, jumpHeight);
-                        this.sceneManager.updateCameraPosition(rightX, this.player.getPosition().y);
+                        this.sceneManager.updateCameraPosition(0, this.player.getPosition().y);
                         break;
                 }
 
@@ -877,10 +873,7 @@
                 this.lanes = [];
                 this.gameState.reset();
                 this.player.setPosition(0, 0, 0);
-                this.sceneManager.updateCameraPosition(
-                    this.sceneManager.initialCamPos.x,
-                    this.sceneManager.initialCamPos.y
-                );
+                this.sceneManager.updateCameraPosition(0, 0);
                 
                 // 重新生成
                 this.generateInitialLanes();
