@@ -2,10 +2,16 @@
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>海豚冒险 - 穿越深海</title>
     <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
+        * { 
+            margin: 0; 
+            padding: 0; 
+            box-sizing: border-box;
+            touch-action: manipulation;
+            -webkit-tap-highlight-color: transparent;
+        }
         
         html, body {
             width: 100%;
@@ -13,12 +19,16 @@
             overflow: hidden;
             font-family: Arial, sans-serif;
             background: radial-gradient(ellipse at bottom, #1B2735 0%, #090A0F 100%);
+            touch-action: none;
+            -webkit-user-select: none;
+            user-select: none;
         }
         
         #gameCanvas { 
             display: block; 
             width: 100vw; 
-            height: 100vh; 
+            height: 100vh;
+            touch-action: none;
         }
         
         .ui-overlay {
@@ -921,6 +931,29 @@
 
         // ========== 启动游戏 ==========
         window.addEventListener('DOMContentLoaded', () => {
+            // 防止双击缩放
+            let lastTouchEnd = 0;
+            document.addEventListener('touchend', (e) => {
+                const now = Date.now();
+                if (now - lastTouchEnd <= 300) {
+                    e.preventDefault();
+                }
+                lastTouchEnd = now;
+            }, { passive: false });
+            
+            // 防止双指缩放
+            document.addEventListener('gesturestart', (e) => {
+                e.preventDefault();
+            });
+            
+            document.addEventListener('gesturechange', (e) => {
+                e.preventDefault();
+            });
+            
+            document.addEventListener('gestureend', (e) => {
+                e.preventDefault();
+            });
+            
             new GameController();
         });
     </script>
