@@ -2,7 +2,7 @@
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>海豚冒险 - 穿越深海</title>
     <style>
         * { 
@@ -17,6 +17,7 @@
             width: 100%;
             height: 100%;
             overflow: hidden;
+            position: fixed;
             font-family: Arial, sans-serif;
             background: radial-gradient(ellipse at bottom, #1B2735 0%, #090A0F 100%);
             touch-action: none;
@@ -26,8 +27,11 @@
         
         #gameCanvas { 
             display: block; 
-            width: 100vw; 
-            height: 100vh;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
             touch-action: none;
         }
         
@@ -134,9 +138,9 @@
         const CONFIG = {
             world: {
                 tileSize: 42,
-                numColumns: 17,
-                scaleFactor: 2,
-                viewDistance: 500
+                numColumns: 13,
+                scaleFactor: 1.4,
+                viewDistance: 320
             },
             player: {
                 size: 15,
@@ -190,7 +194,19 @@
             setupCamera() {
                 const w = window.innerWidth;
                 const h = window.innerHeight;
-                this.camera = new THREE.OrthographicCamera(w/-2, w/2, h/2, h/-2, 0.1, 10000);
+                
+                // 根据屏幕尺寸调整相机视野 - 更温和的缩放
+                const isMobile = w < 768;
+                const scale = isMobile ? 0.65 : 0.9;
+                
+                this.camera = new THREE.OrthographicCamera(
+                    w/-2 * scale, 
+                    w/2 * scale, 
+                    h/2 * scale, 
+                    h/-2 * scale, 
+                    0.1, 
+                    10000
+                );
                 
                 const angleX = 50 * Math.PI / 180;
                 const angleY = 20 * Math.PI / 180;
@@ -204,6 +220,7 @@
                 
                 this.camera.position.set(camX, camY, dist);
                 this.initialCamPos = { x: camX, y: camY };
+                this.cameraScale = scale;
             }
 
             setupRenderer() {
@@ -215,7 +232,33 @@
                 });
                 this.renderer.shadowMap.enabled = true;
                 this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-                this.renderer.setSize(window.innerWidth, window.innerHeight);
+                this.updateRendererSize();
+                
+                // 监听窗口大小变化
+                window.addEventListener('resize', () => this.handleResize());
+            }
+            
+            updateRendererSize() {
+                const width = window.innerWidth;
+                const height = window.innerHeight;
+                this.renderer.setSize(width, height);
+                
+                // 同时更新相机
+                if(this.camera) {
+                    const isMobile = width < 768;
+                    const scale = isMobile ? 0.65 : 0.9;
+                    
+                    this.camera.left = width / -2 * scale;
+                    this.camera.right = width / 2 * scale;
+                    this.camera.top = height / 2 * scale;
+                    this.camera.bottom = height / -2 * scale;
+                    this.camera.updateProjectionMatrix();
+                    this.cameraScale = scale;
+                }
+            }
+            
+            handleResize() {
+                this.updateRendererSize();
             }
 
             setupLighting() {
@@ -724,6 +767,15 @@
 
             initialize() {
                 this.sceneManager.addToScene(this.player.getMesh());
+                
+                // 设置玩家初始位置
+                const z = CONFIG.world.scaleFactor;
+                const w = CONFIG.world.tileSize;
+                const boardW = w * CONFIG.world.numColumns;
+                const initialX = (this.gameState.currentCol * w + w/2) * z - boardW * z / 2;
+                const initialY = this.gameState.currentRow * w * z;
+                this.player.setPosition(initialX, initialY, 0);
+                
                 this.generateInitialLanes();
                 this.updateUI();
             }
@@ -820,29 +872,37 @@
                 const z = CONFIG.world.scaleFactor;
                 const w = CONFIG.world.tileSize;
                 const boardW = w * CONFIG.world.numColumns;
+                
+                // 检测是否为移动设备
+                const isMobile = window.innerWidth < 768;
 
                 switch(currentMove) {
                     case 'up':
                         const upY = this.gameState.currentRow * w * z + distance;
                         this.player.setPosition(this.player.getPosition().x, upY, jumpHeight);
-                        // 视角锁定：仅跟随Y轴（前进方向），X轴保持居中
-                        this.sceneManager.updateCameraPosition(0, upY);
+                        // 视角跟随Y轴（前进方向）
+                        const upCamX = isMobile ? this.player.getPosition().x : 0;
+                        this.sceneManager.updateCameraPosition(upCamX, upY);
                         break;
                     case 'down':
                         const downY = this.gameState.currentRow * w * z - distance;
                         this.player.setPosition(this.player.getPosition().x, downY, jumpHeight);
-                        this.sceneManager.updateCameraPosition(0, downY);
+                        const downCamX = isMobile ? this.player.getPosition().x : 0;
+                        this.sceneManager.updateCameraPosition(downCamX, downY);
                         break;
                     case 'left':
                         const leftX = (this.gameState.currentCol * w + w/2) * z - boardW * z / 2 - distance;
                         this.player.setPosition(leftX, this.player.getPosition().y, jumpHeight);
-                        // 视角锁定：左右移动时不跟随，保持画面稳定
-                        this.sceneManager.updateCameraPosition(0, this.player.getPosition().y);
+                        // 移动端：跟随X轴，桌面端：保持居中
+                        const leftCamX = isMobile ? leftX : 0;
+                        this.sceneManager.updateCameraPosition(leftCamX, this.player.getPosition().y);
                         break;
                     case 'right':
                         const rightX = (this.gameState.currentCol * w + w/2) * z - boardW * z / 2 + distance;
                         this.player.setPosition(rightX, this.player.getPosition().y, jumpHeight);
-                        this.sceneManager.updateCameraPosition(0, this.player.getPosition().y);
+                        // 移动端：跟随X轴，桌面端：保持居中
+                        const rightCamX = isMobile ? rightX : 0;
+                        this.sceneManager.updateCameraPosition(rightCamX, this.player.getPosition().y);
                         break;
                 }
 
@@ -882,8 +942,15 @@
                 // 重置状态
                 this.lanes = [];
                 this.gameState.reset();
-                this.player.setPosition(0, 0, 0);
-                this.sceneManager.updateCameraPosition(0, 0);
+                
+                // 设置玩家初始位置
+                const z = CONFIG.world.scaleFactor;
+                const w = CONFIG.world.tileSize;
+                const boardW = w * CONFIG.world.numColumns;
+                const initialX = (this.gameState.currentCol * w + w/2) * z - boardW * z / 2;
+                const initialY = this.gameState.currentRow * w * z;
+                this.player.setPosition(initialX, initialY, 0);
+                this.sceneManager.updateCameraPosition(0, initialY);
                 
                 // 重新生成
                 this.generateInitialLanes();
