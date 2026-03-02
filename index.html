@@ -818,14 +818,41 @@
                 });
 
                 // 按钮控制
+                const bindPress = (element, handler) => {
+                    if (!element) return;
+
+                    const onPress = (e) => {
+                        if (e && e.cancelable) {
+                            e.preventDefault();
+                        }
+                        handler();
+                    };
+
+                    if (window.PointerEvent) {
+                        element.addEventListener('pointerdown', (e) => {
+                            if (e.pointerType === 'mouse' && e.button !== 0) return;
+                            onPress(e);
+                        });
+                        return;
+                    }
+
+                    const isTouchDevice = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+                    if (isTouchDevice) {
+                        element.addEventListener('touchstart', onPress, { passive: false });
+                        return;
+                    }
+
+                    element.addEventListener('click', handler);
+                };
+
                 document.querySelectorAll('.control-btn').forEach(btn => {
-                    btn.addEventListener('click', () => {
+                    bindPress(btn, () => {
                         this.handleMove(btn.dataset.dir);
                     });
                 });
 
                 // 重启按钮
-                document.getElementById('restartBtn').addEventListener('click', () => {
+                bindPress(document.getElementById('restartBtn'), () => {
                     this.restartGame();
                 });
             }
@@ -1003,7 +1030,13 @@
             let lastTouchEnd = 0;
             document.addEventListener('touchend', (e) => {
                 const now = Date.now();
-                if (now - lastTouchEnd <= 300) {
+                const target = e.target;
+                const isControlTouch = !!(
+                    target &&
+                    typeof target.closest === 'function' &&
+                    target.closest('.control-btn, .restart-btn')
+                );
+                if (!isControlTouch && now - lastTouchEnd <= 300) {
                     e.preventDefault();
                 }
                 lastTouchEnd = now;
